@@ -1,0 +1,6 @@
+{
+  "approved_schema_v1": ["order_id", "customer_code", "amount"],
+  "customers": {"C-1": "Asha", "C-2": "Ben", "C-3": "Chen", "C-4": "Dev"},
+  "accounts_confirmed_by_source_owner": {"A-71": "C-3", "A-72": "C-4", "A-73": "C-1"},
+  "v2_amount_uses_decimal_comma": true
+}
