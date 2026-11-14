@@ -20,19 +20,30 @@ def promote(records: pd.DataFrame, adapter: Adapter) -> Outcome:
     return Outcome(valid, held)
 
 
+def _persist_outcome(store: SilverStore, out: Outcome, processed_ids: set) -> None:
+    store.upsert_valid(out.valid)
+    store.delete_valid([row["order_id"] for row in out.held])
+    held = {
+        row["order_id"]: row
+        for row in store.read_held().to_dict("records")
+        if row["order_id"] not in processed_ids
+    }
+    held.update({row["order_id"]: row for row in out.held})
+    store.replace_held(list(held.values()))
+
+
 def run_batch(store: SilverStore, records: pd.DataFrame, adapter: Adapter) -> Outcome:
     out = promote(records, adapter)
-    store.upsert_valid(out.valid)
-    store.replace_held(out.held)
+    _persist_outcome(store, out, set(records["order_id"]))
     return out
 
 
 def replay_held(store: SilverStore, bronze: pd.DataFrame, adapter: Adapter) -> Outcome:
     """Send held records back through the approved adapter, the same one the daily path uses."""
     held_ids = set(store.read_held()["order_id"])
-    out = promote(bronze[bronze["order_id"].isin(held_ids)], adapter)
-    store.upsert_valid(out.valid)
-    store.replace_held(out.held)
+    records = bronze[bronze["order_id"].isin(held_ids)]
+    out = promote(records, adapter)
+    _persist_outcome(store, out, set(records["order_id"]))
     return out
 
 

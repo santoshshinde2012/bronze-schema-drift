@@ -47,6 +47,12 @@ class SilverTables:
         (DeltaTable(self.valid_path).merge(data, "t.order_id = s.order_id", source_alias="s", target_alias="t")
          .when_matched_update_all().when_not_matched_insert_all().execute())
 
+    def delete_valid(self, order_ids: list[str]) -> None:
+        if not order_ids or not Path(self.valid_path).exists():
+            return
+        values = ", ".join("'" + order_id.replace("'", "''") + "'" for order_id in order_ids)
+        DeltaTable(self.valid_path).delete(f"order_id IN ({values})")
+
     def replace_held(self, rows: list[dict]) -> None:
         write_deltalake(self.held_path, pa.Table.from_pylist(rows, schema=HELD), mode="overwrite")
 

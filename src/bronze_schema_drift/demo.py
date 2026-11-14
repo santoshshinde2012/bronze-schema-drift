@@ -12,19 +12,28 @@ from .bronze import drift, read_file
 from .pipeline import coverage, join_matches, promote, replay_held, run_batch
 from .repository import BronzeTable, SilverTables
 
-HERE = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _held(store) -> list:
     return [(r["order_id"], r["reasons"]) for r in store.read_held().to_dict("records")]
 
 
+def _reset_tables(root: Path) -> None:
+    for name in ("bronze_orders", "naive_orders", "naive_held", "silver_orders", "silver_held",
+                 "fresh_orders", "fresh_held"):
+        path = root / name
+        if path.exists():
+            shutil.rmtree(path)
+
+
 def run(root: Path) -> dict:
-    if root.exists():
-        shutil.rmtree(root)
-    ref = json.loads((HERE / "data" / "reference.json").read_text())
+    root.mkdir(parents=True, exist_ok=True)
+    _reset_tables(root)
+    ref = json.loads((PROJECT_ROOT / "data" / "reference.json").read_text())
     approved, customers, accounts = ref["approved_schema_v1"], ref["customers"], ref["accounts_confirmed_by_source_owner"]
-    files = sorted((HERE / "data" / "landing").glob("*.json"))
+    decimal_comma = ref["v2_amount_uses_decimal_comma"]
+    files = sorted((PROJECT_ROOT / "data" / "landing").glob("*.json"))
     out: dict = {"deltalake": deltalake.__version__}
 
     # 1. Bronze lands every file in rescue mode. Nothing fails.
@@ -56,15 +65,15 @@ def run(root: Path) -> dict:
     out["fallback_o8"] = {"fallback_says": guess["o8"], "account_A72_means": accounts["A-72"]}
 
     # 6. The source owner confirms the mapping and the decimal comma. Replay held records through v2.
-    released = replay_held(silver, landed, ContractV2(accounts))
+    released = replay_held(silver, landed, ContractV2(accounts, decimal_comma))
     out["replay_1"] = {"released": sorted(r["order_id"] for r in released.valid), "still_held": _held(silver),
                        "silver_rows": len(silver.read_valid()), "join_matches": join_matches(silver.read_valid(), customers)}
-    replay_held(silver, landed, ContractV2(accounts))
+    replay_held(silver, landed, ContractV2(accounts, decimal_comma))
     out["replay_2_silver_rows"] = len(silver.read_valid())
 
     # 7. Compare with a fresh run of the same Bronze version through v2 only.
     fresh = SilverTables(root, "fresh")
-    run_batch(fresh, landed, ContractV2(accounts))
+    run_batch(fresh, landed, ContractV2(accounts, decimal_comma))
     a = silver.read_valid()[["order_id", "customer_code", "amount"]]
     b = fresh.read_valid()[["order_id", "customer_code", "amount"]]
     out["matches_fresh_run"] = a.equals(b) and _held(silver) == _held(fresh)
@@ -73,7 +82,7 @@ def run(root: Path) -> dict:
 
 
 def main() -> None:
-    out = run(HERE / "lake")
+    out = run(PROJECT_ROOT / "lake")
     print(f"deltalake {out['deltalake']} on local disk; not a Databricks runtime; reader mimics rescue mode")
     print(f"1. Bronze: {out['bronze']}. Rescued for o4: {out['rescued_example']}")
     print(f"2. Old Silver step succeeded: {out['naive']}")

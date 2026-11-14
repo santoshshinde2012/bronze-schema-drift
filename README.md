@@ -14,7 +14,6 @@ This uses the open-source `deltalake` library (delta-rs) on local disk. It is no
 ## Quick start (local)
 
 ```bash
-cd code
 ./run_demo.sh        # creates .venv, installs requirements, runs pytest, runs the demo
 ```
 
@@ -23,8 +22,8 @@ cd code
 Pasted from a real run on 2026-11-12 (Python 3.13, deltalake 1.6.6, Linux).
 
 ```text
-........                                                                 [100%]
-8 passed in 1.97s
+...........                                                              [100%]
+11 passed in 0.73s
 deltalake 1.6.6 on local disk; not a Databricks runtime; reader mimics rescue mode
 1. Bronze: {'records': 8, 'with_rescued_data': 4}. Rescued for o4: {"account_code": "A-72", "_file_path": "orders_0602.json"}
 2. Old Silver step succeeded: {'rows': 8, 'customer_code_null': 3, 'amount_null': 1, 'join_matches': 5}
@@ -51,20 +50,21 @@ deltalake 1.6.6 on local disk; not a Databricks runtime; reader mimics rescue mo
 | 5 | "A rename needs the source owner, not a fallback". |
 | 6, 7 | "Replay through the same adapter": v2, a second replay, a fresh-run comparison. |
 
-## Layout (mirrors `voice/coding-standards.md`)
+## Layout
 
 | Path | Purpose |
 |------|---------|
 | `data/` | Synthetic partner files and reference data |
-| `src/protocols.py` | `Adapter` and `SilverStore` interfaces |
-| `src/models.py` | Columns and frozen value objects |
-| `src/bronze.py` | Rescue-style landing and record-level drift detection |
-| `src/adapters.py` | Pass-through, contract v1, fallback guess, contract v2 |
-| `src/pipeline.py` | Promote, hold, replay, reconcile |
-| `src/repository.py` | Bronze, Silver and held records as Delta tables |
-| `src/demo.py` | Composition root: wires the pieces and prints the observed results |
-| `tests/` | Eight tests that lock the results the article quotes |
-| `CODING.md` | Link to the coding standards |
+| `src/bronze_schema_drift/` | Installable Python package |
+| `src/bronze_schema_drift/protocols.py` | `Adapter` and `SilverStore` interfaces |
+| `src/bronze_schema_drift/models.py` | Columns and frozen value objects |
+| `src/bronze_schema_drift/bronze.py` | Rescue-style landing and record-level drift detection |
+| `src/bronze_schema_drift/adapters.py` | Pass-through, contract v1, fallback guess, contract v2 |
+| `src/bronze_schema_drift/pipeline.py` | Promote, hold, replay, reconcile |
+| `src/bronze_schema_drift/repository.py` | Bronze, Silver and held records as Delta tables |
+| `src/bronze_schema_drift/demo.py` | Composition root: wires the pieces and prints the observed results |
+| `tests/` | Tests that lock the results the article quotes and cover batch replay behavior |
+| `lake/` | Generated local Delta tables; excluded from Git |
 
 ## Databricks
 

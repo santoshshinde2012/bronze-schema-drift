@@ -76,8 +76,9 @@ class ContractV2:
 
     version = "v2"
 
-    def __init__(self, accounts: dict) -> None:
+    def __init__(self, accounts: dict, decimal_comma: bool = True) -> None:
         self.accounts = accounts
+        self.decimal_comma = decimal_comma
 
     def apply(self, record: dict) -> tuple[dict | None, list[str]]:
         extra = rescued(record)
@@ -92,7 +93,7 @@ class ContractV2:
         customer = customer or mapped
         if not customer:
             reasons.append("customer_code missing")
-        amount = try_decimal(record["amount"], decimal_comma=bool(account))
+        amount = try_decimal(record["amount"], decimal_comma=self.decimal_comma)
         if amount is None:
             reasons.append("amount missing or did not parse")
         if reasons:

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import pytest
+import pandas as pd
 
-from src.adapters import ContractV1, try_decimal
-from src.demo import run
+from bronze_schema_drift.adapters import ContractV1, ContractV2, try_decimal
+from bronze_schema_drift.demo import run
+from bronze_schema_drift.pipeline import run_batch
 
 
 @pytest.fixture(scope="module")
@@ -56,3 +58,61 @@ def test_missing_and_unparseable_amounts_get_different_reasons():
     assert ContractV1().apply({**base, "amount": None})[1] == ["amount missing"]
     assert ContractV1().apply({**base, "amount": "1,5"})[1] == ["amount did not parse"]
     assert str(try_decimal("12,50", decimal_comma=True)) == "12.50"
+
+
+class MemoryStore:
+    def __init__(self):
+        self.valid = {}
+        self.held = {}
+
+    def upsert_valid(self, rows):
+        self.valid.update({row["order_id"]: row for row in rows})
+
+    def delete_valid(self, order_ids):
+        for order_id in order_ids:
+            self.valid.pop(order_id, None)
+
+    def replace_held(self, rows):
+        self.held = {row["order_id"]: row for row in rows}
+
+    def read_valid(self):
+        return pd.DataFrame(self.valid.values())
+
+    def read_held(self):
+        return pd.DataFrame(self.held.values(), columns=["order_id", "_file", "_line", "reasons", "adapter"])
+
+
+def test_batch_keeps_unprocessed_holds_and_removes_replayed_holds():
+    store = MemoryStore()
+    held_record = {"order_id": "o4", "customer_code": None, "amount": "30.00",
+                   "_rescued_data": '{"account_code": "A-72"}', "_file": "orders.json", "_line": 1}
+    valid_record = {"order_id": "o1", "customer_code": "C-1", "amount": "10.00",
+                    "_rescued_data": None, "_file": "orders.json", "_line": 2}
+
+    run_batch(store, pd.DataFrame([held_record]), ContractV1())
+    run_batch(store, pd.DataFrame([valid_record]), ContractV1())
+    assert set(store.held) == {"o4"}
+
+    run_batch(store, pd.DataFrame([held_record]), ContractV1())
+    assert "o4" not in store.valid
+
+    run_batch(store, pd.DataFrame([held_record]), ContractV2({"A-72": "C-4"}))
+    assert store.held == {}
+    assert store.valid["o4"]["customer_code"] == "C-4"
+
+
+def test_run_preserves_unrelated_files_in_output_directory(tmp_path):
+    marker = tmp_path / "keep.txt"
+    marker.write_text("not a demo table")
+
+    run(tmp_path)
+
+    assert marker.read_text() == "not a demo table"
+
+
+def test_v2_uses_confirmed_decimal_format_setting():
+    record = {"order_id": "x", "customer_code": None, "amount": "12,50",
+              "_rescued_data": '{"account_code": "A-72"}'}
+    adapter = ContractV2({"A-72": "C-4"}, decimal_comma=False)
+
+    assert adapter.apply(record)[1] == ["amount missing or did not parse"]
