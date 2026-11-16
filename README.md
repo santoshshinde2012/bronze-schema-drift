@@ -9,21 +9,90 @@ This uses the open-source `deltalake` library (delta-rs) on local disk. It is no
 ## Prerequisites
 
 - Python 3.10+ on macOS or Linux
-- Network access for the first `pip install`
+- Network access for the initial dependency installation
 
-## Quick start (local)
+## Run locally
 
 ```bash
-./run_demo.sh        # creates .venv, installs requirements, runs pytest, runs the demo
+./run_demo.sh
 ```
 
-## Expected output
+The script creates a project-local `.venv` if needed, installs the project and its
+development dependencies from `pyproject.toml`, runs the test suite, and then runs
+the demo. The demo writes its Delta tables to `lake/`; it resets its own output
+tables on each run. The `.gitignore` excludes the environment, caches, and
+generated tables from Git.
 
-Pasted from a real run on 2026-11-12 (Python 3.13, deltalake 1.6.6, Linux).
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Inputs
+        Files["Partner JSON Lines<br/>data/landing/"]
+        Reference["Approved schema and mappings<br/>data/reference.json"]
+    end
+
+    subgraph App["bronze_schema_drift package"]
+        Demo["demo.py<br/>composition root"]
+        Reader["bronze.py<br/>read and detect drift"]
+        BronzeRepo["BronzeTable<br/>repository.py"]
+        Pipeline["pipeline.py<br/>promote, hold, replay"]
+        AdapterPort["Adapter protocol"]
+        Adapters["PassThrough · ContractV1<br/>FallbackGuess · ContractV2"]
+        StorePort["SilverStore protocol"]
+        SilverRepo["SilverTables<br/>repository.py"]
+        Console["Console output"]
+    end
+
+    subgraph Tables["Local Delta tables"]
+        Bronze[("bronze_orders")]
+        Valid[("silver_orders")]
+        Held[("silver_held")]
+    end
+
+    Files --> Demo
+    Reference --> Demo
+    Demo --> Reader
+    Reader -->|parsed rows| Demo
+    Demo -->|append and read| BronzeRepo
+    BronzeRepo --> Bronze
+    Bronze --> Demo
+    Demo -->|Bronze records| Pipeline
+    Demo --> Console
+    Adapters -. implements .-> AdapterPort
+    Pipeline -. depends on .-> AdapterPort
+    Pipeline -->|depends on| StorePort
+    SilverRepo -. implements .-> StorePort
+    SilverRepo --> Valid
+    SilverRepo --> Held
+
+    classDef input fill:#F8FAFC,stroke:#64748B,stroke-width:1.5px,color:#0F172A
+    classDef app fill:#EFF6FF,stroke:#2563EB,stroke-width:1.5px,color:#1E3A8A
+    classDef port fill:#F5F3FF,stroke:#7C3AED,stroke-width:1.5px,color:#4C1D95
+    classDef repository fill:#F0FDFA,stroke:#0F766E,stroke-width:1.5px,color:#134E4A
+    classDef table fill:#ECFDF5,stroke:#059669,stroke-width:1.5px,color:#064E3B
+    classDef output fill:#FFF7ED,stroke:#D97706,stroke-width:1.5px,color:#7C2D12
+
+    class Files,Reference input
+    class Demo,Reader,Pipeline,Adapters app
+    class AdapterPort,StorePort port
+    class BronzeRepo,SilverRepo repository
+    class Bronze,Valid,Held table
+    class Console output
+```
+
+`demo.py` wires the flow. Bronze preserves landed records; the pipeline applies
+an adapter through the `Adapter` protocol and uses the `SilverStore` abstraction
+to write valid and held records. Replay reads Bronze again and runs held records
+through the approved adapter.
+
+## Sample output
+
+Recorded on Python 3.12 with `deltalake` 1.6.6. Test duration varies by machine.
 
 ```text
 ...........                                                              [100%]
-11 passed in 0.73s
+11 passed in 1.02s
 deltalake 1.6.6 on local disk; not a Databricks runtime; reader mimics rescue mode
 1. Bronze: {'records': 8, 'with_rescued_data': 4}. Rescued for o4: {"account_code": "A-72", "_file_path": "orders_0602.json"}
 2. Old Silver step succeeded: {'rows': 8, 'customer_code_null': 3, 'amount_null': 1, 'join_matches': 5}
@@ -65,6 +134,10 @@ deltalake 1.6.6 on local disk; not a Databricks runtime; reader mimics rescue mo
 | `src/bronze_schema_drift/demo.py` | Composition root: wires the pieces and prints the observed results |
 | `tests/` | Tests that lock the results the article quotes and cover batch replay behavior |
 | `lake/` | Generated local Delta tables; excluded from Git |
+| `pyproject.toml` | Package metadata, dependencies, and pytest configuration |
+| `requirements.txt` | Editable install of the project and its development dependencies |
+| `run_demo.sh` | Creates the environment, installs dependencies, tests, and runs the demo |
+| `.gitignore` | Excludes local environments, caches, and generated files |
 
 ## Databricks
 
