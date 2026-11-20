@@ -146,3 +146,7 @@ No notebook is included. The article links the Databricks pages for Auto Loader 
 ## Sources
 
 S347, S348 in the article ledger.
+
+## Support
+
+[![Buy Me a Coffee](https://img.shields.io/badge/buymeacoffee-black?style=for-the-badge&logo=buymeacoffee&logoColor=white)](https://buymeacoffee.com/santoshshin)
